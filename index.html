@@ -587,7 +587,8 @@
             gap: 15px;
         }
 
-        .weather-details-grid .detail-card:first-child {
+        .weather-details-grid .detail-card:first-child,
+        .weather-details-grid .detail-card:last-child {
             grid-column: span 2;
         }
 
@@ -1056,7 +1057,8 @@
             .weather-details-grid {
                 grid-template-columns: 1fr;
             }
-            .weather-details-grid .detail-card:first-child {
+            .weather-details-grid .detail-card:first-child,
+            .weather-details-grid .detail-card:last-child {
                 grid-column: span 1;
             }
         }
@@ -1259,7 +1261,7 @@
                     </div>
 
                     <!-- Sunset Card -->
-                    <div class="detail-card" style="grid-column: span 2;">
+                    <div class="detail-card">
                         <div class="detail-icon-circle">
                             <svg viewBox="0 0 24 24">
                                 <path d="M12 2v3M5.22 5.22l2.12 2.12M18.78 5.22l-2.12 2.12M2 18h20M17 18a5 5 0 0 0-10 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
