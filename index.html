@@ -821,6 +821,20 @@
             font-family: var(--font-numbers);
         }
 
+        .day-sun-times {
+            margin-top: 2px;
+        }
+
+        .day-sunrise,
+        .day-sunset {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            color: var(--text-muted);
+            font-family: var(--font-numbers);
+            font-size: 0.7rem;
+        }
+
         /* HOURLY FORECAST SYSTEM STYLES */
         .hourly-forecast-section {
             display: flex;
@@ -1230,8 +1244,22 @@
                         </div>
                     </div>
 
-                    <!-- Sunset Card -->
+                    <!-- Sunrise Card -->
                     <div class="detail-card">
+                        <div class="detail-icon-circle">
+                            <svg viewBox="0 0 24 24">
+                                <path d="M12 2v3M5.22 5.22l2.12 2.12M18.78 5.22l-2.12 2.12M2 18h20M17 18a5 5 0 0 0-10 0M2 22h20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                                <path d="M12 13l-3-3M12 13l3-3" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+                            </svg>
+                        </div>
+                        <div class="detail-info">
+                            <span class="label">שעת זריחה</span>
+                            <span class="value" id="detailSunrise">--:--</span>
+                        </div>
+                    </div>
+
+                    <!-- Sunset Card -->
+                    <div class="detail-card" style="grid-column: span 2;">
                         <div class="detail-icon-circle">
                             <svg viewBox="0 0 24 24">
                                 <path d="M12 2v3M5.22 5.22l2.12 2.12M18.78 5.22l-2.12 2.12M2 18h20M17 18a5 5 0 0 0-10 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
@@ -1342,6 +1370,7 @@
         const detailSkyDesc = document.getElementById('detailSkyDesc');
         const detailRainProb = document.getElementById('detailRainProb');
         const detailWindSpeed = document.getElementById('detailWindSpeed');
+        const detailSunrise = document.getElementById('detailSunrise');
         const detailSunset = document.getElementById('detailSunset');
 
         // WMO CODES MAP TO HEBREW AND DYNAMIC CSS THEME GROUPS
@@ -1682,6 +1711,12 @@
             detailRainProb.textContent = `${rainProb}%`;
             detailWindSpeed.textContent = `${windSpeed} קמ"ש`;
             
+            if (daily.sunrise && daily.sunrise[index]) {
+                detailSunrise.textContent = daily.sunrise[index].split('T')[1];
+            } else {
+                detailSunrise.textContent = '--:--';
+            }
+
             if (daily.sunset && daily.sunset[index]) {
                 detailSunset.textContent = daily.sunset[index].split('T')[1];
             } else {
@@ -1762,7 +1797,9 @@
                 const minTemp = Math.round(daily.temperature_2m_min[i]);
                 const rainProb = daily.precipitation_probability_max[i];
                 const windSpeed = Math.round(daily.wind_speed_10m_mean[i]);
-                
+                const sunrise = daily.sunrise && daily.sunrise[i] ? daily.sunrise[i].split('T')[1] : '--:--';
+                const sunset = daily.sunset && daily.sunset[i] ? daily.sunset[i].split('T')[1] : '--:--';
+
                 const mapping = wmoMapping[wmoCode] || { desc: "מעונן חלקית", theme: "clouds", icon: "sun-cloud" };
                 const dayShort = getShortHebrewDayName(dateStr);
                 const dayDate = getShortFormattedDate(dateStr);
@@ -1790,6 +1827,14 @@
                             <span style="font-size: 0.7rem;">💨</span>${windSpeed}
                         </span>
                     </div>
+                    <div class="day-indicators day-sun-times">
+                        <span class="day-sunrise" title="שעת זריחה">
+                            <span style="font-size: 0.7rem;">🌅</span>${sunrise}
+                        </span>
+                        <span class="day-sunset" title="שעת שקיעה">
+                            <span style="font-size: 0.7rem;">🌇</span>${sunset}
+                        </span>
+                    </div>
                 `;
                 
                 weeklyGrid.appendChild(card);
@@ -1803,7 +1848,7 @@
             const hourlySection = document.getElementById('hourlyForecastSection');
             if (hourlySection) hourlySection.style.display = 'none';
             
-            const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_mean,sunset&hourly=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
+            const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_mean,sunrise,sunset&hourly=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
             
             try {
                 const response = await fetch(forecastUrl);
