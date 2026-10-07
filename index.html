@@ -567,6 +567,13 @@
             color: var(--accent-color);
         }
 
+        .hero-temp-label {
+            font-size: 0.85rem;
+            font-weight: 500;
+            color: var(--text-secondary);
+            margin-top: 6px;
+        }
+
         .hero-desc {
             font-size: 1.3rem;
             font-weight: 700;
@@ -1182,6 +1189,7 @@
                                 <span id="heroTemp">24</span>
                                 <span class="hero-temp-unit">°C</span>
                             </div>
+                            <div class="hero-temp-label" id="heroTempLabel">טמפרטורה נוכחית</div>
                             <div class="hero-desc" id="heroWeatherDesc">בהיר</div>
                         </div>
                     </div>
@@ -1348,6 +1356,9 @@
         let activeWeatherData = null;
         let activeDayIndex = 0; // Today
         let currentCoords = { ...DEFAULT_LOCATION };
+        let activeWeatherLocation = null;
+        let weatherRequestId = 0;
+        let weatherAbortController = null;
 
         // DOM ELEMENTS
         const searchInput = document.getElementById('searchInput');
@@ -1366,6 +1377,7 @@
         const activeDate = document.getElementById('activeDate');
         const heroWeatherIcon = document.getElementById('heroWeatherIcon');
         const heroTemp = document.getElementById('heroTemp');
+        const heroTempLabel = document.getElementById('heroTempLabel');
         const heroWeatherDesc = document.getElementById('heroWeatherDesc');
         const detailTempRange = document.getElementById('detailTempRange');
         const tempBarFill = document.getElementById('tempBarFill');
@@ -1632,29 +1644,35 @@
         // HEBREW DAY NAMES CONVERTER
         const daysInHebrew = ["יום ראשון", "יום שני", "יום שלישי", "יום רביעי", "יום חמישי", "יום שישי", "יום שבת"];
         
+        function parseForecastDate(dateStr) {
+            // Daily API dates are calendar dates, not instants in the device time zone.
+            const [year, month, day] = dateStr.split('-').map(Number);
+            return new Date(Date.UTC(year, month - 1, day));
+        }
+
         function formatHebrewDateString(dateStr) {
-            const date = new Date(dateStr);
-            const dayHeb = daysInHebrew[date.getDay()];
-            const dayNum = date.getDate();
-            const monthHeb = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"][date.getMonth()];
+            const date = parseForecastDate(dateStr);
+            const dayHeb = daysInHebrew[date.getUTCDay()];
+            const dayNum = date.getUTCDate();
+            const monthHeb = ["ינואר", "פברואר", "מרץ", "אפריל", "מאי", "יוני", "יולי", "אוגוסט", "ספטמבר", "אוקטובר", "נובמבר", "דצמבר"][date.getUTCMonth()];
             return `${dayHeb}, ${dayNum} ב${monthHeb}`;
         }
 
         function getShortHebrewDayName(dateStr) {
-            const date = new Date(dateStr);
+            const date = parseForecastDate(dateStr);
             const shortDays = ["ראשון", "שני", "שלישי", "רביעי", "חמישי", "שישי", "שבת"];
-            // If the date is today, return "היום" (Today) instead of the day name! Beautiful UX!
             const today = new Date();
-            if (date.getDate() === today.getDate() && date.getMonth() === today.getMonth() && date.getFullYear() === today.getFullYear()) {
-                return "היום";
-            }
-            return shortDays[date.getDay()];
+            const localToday = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+            // The first forecast day is today at the requested location (timezone=auto).
+            const forecastToday = activeWeatherData ? activeWeatherData.daily.time[0] : localToday;
+            if (dateStr === forecastToday) return "היום";
+            return shortDays[date.getUTCDay()];
         }
 
         function getShortFormattedDate(dateStr) {
-            const date = new Date(dateStr);
-            const day = String(date.getDate()).padStart(2, '0');
-            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const date = parseForecastDate(dateStr);
+            const day = String(date.getUTCDate()).padStart(2, '0');
+            const month = String(date.getUTCMonth() + 1).padStart(2, '0');
             return `${day}/${month}`;
         }
 
@@ -1695,7 +1713,10 @@
             const wmoCode = daily.weather_code[index];
             const maxTemp = Math.round(daily.temperature_2m_max[index]);
             const minTemp = Math.round(daily.temperature_2m_min[index]);
-            const currentTemp = index === 0 ? Math.round((maxTemp + minTemp) / 2) : maxTemp; // Show average for today as current, or max for future
+            const isToday = index === 0;
+            const currentTemp = activeWeatherData.current && activeWeatherData.current.temperature_2m;
+            const hasCurrentTemp = typeof currentTemp === 'number' && Number.isFinite(currentTemp);
+            const displayedTemp = isToday ? (hasCurrentTemp ? Math.round(currentTemp) : '--') : maxTemp;
             
             const rainProb = daily.precipitation_probability_max[index];
             const windSpeed = Math.round(daily.wind_speed_10m_mean[index]);
@@ -1703,10 +1724,13 @@
             const mapping = wmoMapping[wmoCode] || { desc: "מעונן חלקית", longDesc: "מעונן חלקית", theme: "clouds", icon: "sun-cloud" };
 
             // Update DOM Texts
-            locationName.textContent = currentCoords.name;
+            locationName.textContent = (activeWeatherLocation || currentCoords).name;
             activeDate.textContent = formatHebrewDateString(daily.time[index]);
             heroWeatherDesc.textContent = mapping.desc;
-            heroTemp.textContent = currentTemp;
+            heroTemp.textContent = displayedTemp;
+            heroTempLabel.textContent = isToday
+                ? (hasCurrentTemp ? 'טמפרטורה נוכחית' : 'טמפרטורה נוכחית אינה זמינה')
+                : 'מקסימום צפוי';
             
             detailTempRange.textContent = `${maxTemp}° / ${minTemp}°`;
             detailSkyDesc.textContent = mapping.longDesc;
@@ -1763,8 +1787,7 @@
                 const wmoCode = hourly.weather_code[idx];
                 const windSpeed = Math.round(hourly.wind_speed_10m[idx]);
                 
-                const dateObj = new Date(timeStr);
-                const hourText = String(dateObj.getHours()).padStart(2, '0') + ':00';
+                const hourText = timeStr.split('T')[1].slice(0, 2) + ':00';
                 
                 const mapping = wmoMapping[wmoCode] || { desc: "מעונן חלקית", icon: "sun-cloud" };
                 
@@ -1843,70 +1866,113 @@
             }
         }
 
+        // Clear old forecast cards before a request and after any failed rendering.
+        function clearWeatherDisplay() {
+            activeWeatherData = null;
+            activeWeatherLocation = null;
+            activeDayIndex = 0;
+            weatherMainView.style.display = 'none';
+            weeklyGrid.innerHTML = '';
+            const hourlySection = document.getElementById('hourlyForecastSection');
+            const hourlyContainer = document.getElementById('hourlyScrollContainer');
+            if (hourlySection) hourlySection.style.display = 'none';
+            if (hourlyContainer) hourlyContainer.innerHTML = '';
+        }
+
         // FETCH WEATHER API CALL
         async function fetchWeather(lat, lon) {
+            const requestId = ++weatherRequestId;
+            const requestedLocation = { ...currentCoords };
+            if (weatherAbortController) weatherAbortController.abort();
+            const controller = new AbortController();
+            weatherAbortController = controller;
+
+            clearWeatherDisplay();
             weatherLoader.style.display = 'flex';
-            weatherMainView.style.display = 'none';
-            const hourlySection = document.getElementById('hourlyForecastSection');
-            if (hourlySection) hourlySection.style.display = 'none';
-            
-            const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_mean,sunrise,sunset&hourly=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
-            
+            weatherLoader.innerHTML = `
+                <div class="spinner"></div>
+                <p>טוען את התחזית העדכנית...</p>
+            `;
+
+            const forecastUrl = `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&current=temperature_2m&daily=weather_code,temperature_2m_max,temperature_2m_min,precipitation_probability_max,wind_speed_10m_mean,sunrise,sunset&hourly=temperature_2m,weather_code,wind_speed_10m&timezone=auto`;
+
             try {
-                const response = await fetch(forecastUrl);
+                const response = await fetch(forecastUrl, { signal: controller.signal });
+                if (requestId !== weatherRequestId) return;
                 if (!response.ok) throw new Error("שגיאה בקבלת נתוני מזג האוויר");
-                
                 const data = await response.json();
+                if (requestId !== weatherRequestId) return;
+
                 activeWeatherData = data;
-                
-                // Render UI components
+                activeWeatherLocation = requestedLocation;
                 renderWeeklyForecast(data.daily);
-                updateActiveDayDisplay(0); // Today is default
-                
+                updateActiveDayDisplay(0);
                 weatherLoader.style.display = 'none';
                 weatherMainView.style.display = 'grid';
             } catch (err) {
+                if (requestId !== weatherRequestId || err.name === 'AbortError') return;
                 console.error(err);
+                clearWeatherDisplay();
                 weatherLoader.innerHTML = `
                     <p style="color:#ef4444; font-weight:700;">שגיאה בחיבור לשרת מזג האוויר. אנא נסה שוב מאוחר יותר.</p>
                     <button class="geo-btn" onclick="fetchWeather(currentCoords.latitude, currentCoords.longitude)" style="background:#ef4444; box-shadow:none; margin-top:10px;">נסה שוב</button>
                 `;
+            } finally {
+                if (requestId === weatherRequestId) weatherAbortController = null;
             }
         }
 
         // HEBREW AUTOCOMPLETE GEOCODING SEARCH
         let debounceTimer;
-        searchInput.addEventListener('input', (e) => {
+        let searchRequestId = 0;
+        let searchAbortController = null;
+
+        function invalidateSearchSuggestions() {
             clearTimeout(debounceTimer);
+            searchRequestId++;
+            if (searchAbortController) searchAbortController.abort();
+            searchAbortController = null;
+            suggestionsBox.innerHTML = '';
+            suggestionsBox.style.display = 'none';
+        }
+
+        searchInput.addEventListener('input', (e) => {
+            invalidateSearchSuggestions();
             const query = e.target.value.trim();
-            
-            if (query.length < 2) {
-                suggestionsBox.style.display = 'none';
-                return;
-            }
-            
+            if (query.length < 2) return;
+            const requestId = searchRequestId;
             debounceTimer = setTimeout(() => {
-                fetchGeocodingSuggestions(query);
+                fetchGeocodingSuggestions(query, requestId);
             }, 300);
         });
 
-        async function fetchGeocodingSuggestions(query) {
+        async function fetchGeocodingSuggestions(query, requestId = searchRequestId) {
+            if (requestId !== searchRequestId || query !== searchInput.value.trim() || query.length < 2) return;
+            if (searchAbortController) searchAbortController.abort();
+            const controller = new AbortController();
+            searchAbortController = controller;
+            const isCurrentSearch = () => requestId === searchRequestId && query === searchInput.value.trim();
             const geocodeUrl = `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(query)}&count=5&language=he&format=json`;
-            
+
             try {
-                const res = await fetch(geocodeUrl);
-                if (!res.ok) return;
-                
+                const res = await fetch(geocodeUrl, { signal: controller.signal });
+                if (!isCurrentSearch()) return;
+                if (!res.ok) throw new Error('שגיאה בחיפוש היישוב');
                 const data = await res.json();
+                if (!isCurrentSearch()) return;
                 if (!data.results || data.results.length === 0) {
                     suggestionsBox.innerHTML = '<div class="suggestion-item" style="cursor:default; color:var(--text-muted);">לא נמצאו תוצאות עבור יישוב זה</div>';
                     suggestionsBox.style.display = 'block';
                     return;
                 }
-                
                 renderSuggestions(data.results);
             } catch (err) {
+                if (!isCurrentSearch() || err.name === 'AbortError') return;
                 console.error("Geocoding Error:", err);
+                suggestionsBox.innerHTML = '<div class="suggestion-item" style="cursor:default; color:var(--text-muted);">שגיאה בחיפוש היישוב. נסה שוב.</div>';
+                suggestionsBox.style.display = 'block';
+            } finally {
+                if (requestId === searchRequestId) searchAbortController = null;
             }
         }
 
@@ -1933,7 +1999,7 @@
                     };
                     
                     searchInput.value = r.name;
-                    suggestionsBox.style.display = 'none';
+                    invalidateSearchSuggestions();
                     
                     // Save to localstorage
                     safeStorage.setItem('lastWeatherLocation', JSON.stringify(currentCoords));
@@ -1950,7 +2016,7 @@
         // CLOSE DROPDOWN WHEN CLICKING OUTSIDE
         document.addEventListener('click', (e) => {
             if (!searchInput.contains(e.target) && !suggestionsBox.contains(e.target)) {
-                suggestionsBox.style.display = 'none';
+                invalidateSearchSuggestions();
             }
         });
 
@@ -2000,6 +2066,7 @@
                         region: resolvedRegion
                     };
                     
+                    invalidateSearchSuggestions();
                     searchInput.value = resolvedName;
                     safeStorage.setItem('lastWeatherLocation', JSON.stringify(currentCoords));
                     
